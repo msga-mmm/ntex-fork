@@ -11,8 +11,18 @@ jobs:
           - 1.88.0 # MSRV
           - stable
           - nightly
+        suite:
+          - name: neon-polling
+            features: ntex/neon-polling,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws
+          - name: neon-uring
+            features: ntex/neon-uring,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws
+          - name: tokio
+            features: ntex/tokio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws
+          - name: compio
+            features: ntex/compio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws
+        kind: [test, doc]
 
-    name: ${{ matrix.version }} - x86_64-unknown-linux-gnu
+    name: ${{ matrix.version }} - ${{ matrix.suite.name }} - ${{ matrix.kind }} - x86_64-unknown-linux-gnu
     runs-on: ubuntu-latest
 
     steps:
@@ -32,42 +42,11 @@ jobs:
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@v2.8.2
 
-      - name: Run tests (neon-polling)
+      - name: Run ${{ matrix.kind }} (${{ matrix.suite.name }})
         timeout-minutes: 10
         run: |
-          cargo nextest run --retries=3 --all --no-default-features --features="ntex/neon-polling,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
-
-      - name: Run doc tests (neon-polling)
-        timeout-minutes: 10
-        run: |
-          cargo test --doc --all --no-default-features --features="ntex/neon-polling,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
-
-      - name: Run tests (neon-uring)
-        timeout-minutes: 10
-        run: |
-          cargo nextest run --retries=3 --all --no-default-features --features="ntex/neon-uring,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
-
-      - name: Run doc tests (neon-uring)
-        timeout-minutes: 10
-        run: |
-          cargo test --doc --all --no-default-features --features="ntex/neon-uring,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
-
-      - name: Run tests (tokio)
-        timeout-minutes: 10
-        run: |
-          cargo nextest run --retries=3 --all --no-default-features --features="ntex/tokio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
-
-      - name: Run doc tests (tokio)
-        timeout-minutes: 10
-        run: |
-          cargo test --doc --all --no-default-features --features="ntex/tokio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
-
-      - name: Run tests (compio)
-        timeout-minutes: 10
-        run: |
-          cargo nextest run --retries=3 --all --no-default-features --features="ntex/compio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
-
-      - name: Run doc tests (compio)
-        timeout-minutes: 10
-        run: |
-          cargo test --doc --all --no-default-features --features="ntex/compio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+          if [ "${{ matrix.kind }}" = "test" ]; then
+            cargo nextest run --retries=3 --all --no-default-features --features="${{ matrix.suite.features }}"
+          else
+            cargo test --doc --all --no-default-features --features="${{ matrix.suite.features }}"
+          fi
