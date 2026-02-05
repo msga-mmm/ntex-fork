@@ -1,4 +1,4 @@
-name: CI (Windows)
+name: CI / Windows
 
 on: [push, pull_request]
 
@@ -19,7 +19,7 @@ jobs:
           - name: compio
             features: ntex/compio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws
 
-    name: ${{ matrix.version }} - ${{ matrix.suite.name }} - x86_64-pc-windows-msvc
+    name: Windows / ${{ matrix.version }} / ${{ matrix.suite.name }}
     runs-on: windows-latest
 
     steps:

@@ -1,4 +1,4 @@
-name: CI (OSX)
+name: CI / macOS
 
 on: [push, pull_request]
 
@@ -18,7 +18,7 @@ jobs:
           - name: compio
             features: ntex/compio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws
 
-    name: ${{ matrix.version }} - ${{ matrix.suite.name }} - aarch64-apple-darwin
+    name: macOS / ${{ matrix.version }} / ${{ matrix.suite.name }}
     runs-on: macOS-latest
 
     steps:

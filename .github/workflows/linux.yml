@@ -1,4 +1,4 @@
-name: CI (Linux)
+name: CI / Linux
 
 on: [push, pull_request]
 
@@ -22,7 +22,7 @@ jobs:
             features: ntex/compio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws
         kind: [test, doc]
 
-    name: ${{ matrix.version }} - ${{ matrix.suite.name }} - ${{ matrix.kind }} - x86_64-unknown-linux-gnu
+    name: Linux / ${{ matrix.version }} / ${{ matrix.suite.name }} / ${{ matrix.kind }}
     runs-on: ubuntu-latest
 
     steps:
