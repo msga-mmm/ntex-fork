@@ -34,24 +34,6 @@ jobs:
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@v2.8.2
 
-      - name: Cache vcpkg
-        uses: actions/cache@v5
-        with:
-          path: C:\vcpkg\installed\
-          key: x86_64-pc-windows-msvc-openssl
-
-      - name: Cache cargo registry
-        uses: actions/cache@v5
-        with:
-          path: ~/.cargo/registry
-          key: ${{ matrix.version }}-x86_64-pc-windows-msvc-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v5
-        with:
-          path: ~/.cargo/git
-          key: ${{ matrix.version }}-x86_64-pc-windows-msvc-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
-
       - name: Install cmake
         uses: lukka/get-cmake@latest
 
@@ -59,12 +41,14 @@ jobs:
         uses: ilammy/setup-nasm@v1
 
       - name: Cache openssl
+        id: cache-openssl
         uses: actions/cache@v5
         with:
           path: C:\vcpkg\installed\x64-windows\
           key: x86_64-openssl
 
       - name: Install OpenSSL
+        if: steps.cache-openssl.outputs.cache-hit != 'true'
         run: |
           $env:VCPKG_MANIFEST_MODE = 'OFF'
           vcpkg integrate install
