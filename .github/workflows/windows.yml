@@ -6,25 +6,18 @@ env:
   VCPKGRS_DYNAMIC: 1
 
 jobs:
-  build_and_test:
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - stable
-          - nightly
-
-    name: ${{ matrix.version }} - x86_64-pc-windows-msvc
+  test:
+    name: CI / Windows
     runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v6
       - uses: taiki-e/install-action@nextest
 
-      - name: Install ${{ matrix.version }}
+      - name: Install stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ matrix.version }}-x86_64-pc-windows-msvc
+          toolchain: stable
 
       - name: Generate Cargo.lock
         uses: actions-rs/cargo@v1
@@ -44,13 +37,13 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cargo/registry
-          key: ${{ matrix.version }}-x86_64-pc-windows-msvc-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
+          key: windows-x86_64-pc-windows-msvc-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Cache cargo index
         uses: actions/cache@v5
         with:
           path: ~/.cargo/git
-          key: ${{ matrix.version }}-x86_64-pc-windows-msvc-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
+          key: windows-x86_64-pc-windows-msvc-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install cmake
         uses: lukka/get-cmake@latest
@@ -74,14 +67,48 @@ jobs:
           Get-ChildItem C:\vcpkg\installed\x64-windows\bin
           Get-ChildItem C:\vcpkg\installed\x64-windows\lib
 
-      - name: Run tests (tokio)
-        run: |
-          cargo nextest run --retries=3 --all --no-default-features --no-fail-fast --features="ntex/tokio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws" -- --skip test_timer
+      - name: Install extra toolchains
+        run: rustup toolchain install nightly
 
-      - name: Run tests (compio)
+      - name: Run Windows suites
+        shell: pwsh
         run: |
-          cargo nextest run --retries=3 --all --no-default-features --no-fail-fast --features="ntex/compio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws" -- --skip test_timer
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Windows Test Summary"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Toolchain | Runtime | Kind | Result |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| --- | --- | --- | --- |"
 
-      #- name: Run tests (neon)
-      #  run: |
-      #    cargo nextest run --retries=3 --all --no-default-features --no-fail-fast --features="ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws" -- --skip test_timer
+          $failures = 0
+          $baseFeatures = "ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+
+          function Run-Suite {
+            param(
+              [string]$Toolchain,
+              [string]$Runtime,
+              [string]$Features
+            )
+
+            Write-Output "::group::Windows | $Toolchain | $Runtime | tests"
+            cargo +$Toolchain nextest run --retries=3 --all --no-default-features --no-fail-fast --features="$Features" -- --skip test_timer
+            $rc = $LASTEXITCODE
+            Write-Output "::endgroup::"
+
+            if ($rc -eq 0) {
+              $result = "PASS"
+            } else {
+              $result = "FAIL ($rc)"
+              $script:failures++
+            }
+
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| $Toolchain | $Runtime | tests | $result |"
+          }
+
+          foreach ($toolchain in @("stable", "nightly")) {
+            Run-Suite -Toolchain $toolchain -Runtime "tokio" -Features "ntex/tokio,$baseFeatures"
+            Run-Suite -Toolchain $toolchain -Runtime "compio" -Features "ntex/compio,$baseFeatures"
+          }
+
+          if ($failures -gt 0) {
+            Write-Output "$failures suite(s) failed."
+            exit 1
+          }

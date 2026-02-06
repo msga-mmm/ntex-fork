@@ -3,25 +3,18 @@ name: CI (OSX)
 on: [push, pull_request]
 
 jobs:
-  build_and_test:
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - stable
-          - nightly
-
-    name: ${{ matrix.version }} - aarch64-apple-darwin
+  test:
+    name: CI / macOS
     runs-on: macOS-latest
 
     steps:
       - uses: actions/checkout@v6
       - uses: taiki-e/install-action@nextest
 
-      - name: Install ${{ matrix.version }}
+      - name: Install stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ matrix.version }}-aarch64-apple-darwin
+          toolchain: stable
 
       - name: Generate Cargo.lock
         uses: actions-rs/cargo@v1
@@ -31,14 +24,52 @@ jobs:
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@v2.8.2
 
-      - name: Run tests (neon)
-        timeout-minutes: 10
-        run: cargo nextest run --retries=3 --all --no-default-features --no-fail-fast --features="ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+      - name: Install extra toolchains
+        run: rustup toolchain install nightly
 
-      - name: Run tests (tokio)
-        timeout-minutes: 10
-        run: cargo nextest run --retries=3 --all --no-default-features --no-fail-fast --features="ntex/tokio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+      - name: Run macOS suites
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          set -u -o pipefail
 
-      - name: Run tests (compio)
-        timeout-minutes: 10
-        run: cargo nextest run --retries=3 --all --no-default-features --features="ntex/compio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+          echo "## macOS Test Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Toolchain | Runtime | Kind | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+
+          failures=0
+          base_features="ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+
+          run_suite() {
+            local toolchain="$1"
+            local runtime="$2"
+            local features="$3"
+            local rc=0
+
+            echo "::group::macOS | ${toolchain} | ${runtime} | tests"
+            cargo +"${toolchain}" nextest run --retries=3 --all --no-default-features --no-fail-fast --features="${features}"
+            rc=$?
+            echo "::endgroup::"
+
+            if [ $rc -eq 0 ]; then
+              result="PASS"
+            else
+              result="FAIL (${rc})"
+              failures=$((failures + 1))
+            fi
+
+            echo "| ${toolchain} | ${runtime} | tests | ${result} |" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          for toolchain in stable nightly; do
+            run_suite "${toolchain}" "neon" "${base_features}"
+            run_suite "${toolchain}" "tokio" "ntex/tokio,${base_features}"
+            run_suite "${toolchain}" "compio" "ntex/compio,${base_features}"
+          done
+
+          if [ $failures -gt 0 ]; then
+            echo ""
+            echo "${failures} suite(s) failed."
+            exit 1
+          fi

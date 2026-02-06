@@ -3,26 +3,18 @@ name: CI (Linux)
 on: [push, pull_request]
 
 jobs:
-  build_and_test:
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - 1.88.0 # MSRV
-          - stable
-          - nightly
-
-    name: ${{ matrix.version }} - x86_64-unknown-linux-gnu
+  test:
+    name: CI / Linux
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
       - uses: taiki-e/install-action@nextest
 
-      - name: Install ${{ matrix.version }}
+      - name: Install stable
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ matrix.version }}-x86_64-unknown-linux-gnu
+          toolchain: stable
 
       - name: Generate Cargo.lock
         uses: actions-rs/cargo@v1
@@ -32,42 +24,62 @@ jobs:
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@v2.8.2
 
-      - name: Run tests (neon-polling)
-        timeout-minutes: 10
+      - name: Install extra toolchains
         run: |
-          cargo nextest run --retries=3 --all --no-default-features --features="ntex/neon-polling,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+          rustup toolchain install 1.88.0
+          rustup toolchain install nightly
 
-      - name: Run doc tests (neon-polling)
-        timeout-minutes: 10
+      - name: Run Linux suites
+        timeout-minutes: 120
+        shell: bash
         run: |
-          cargo test --doc --all --no-default-features --features="ntex/neon-polling,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+          set -u -o pipefail
 
-      - name: Run tests (neon-uring)
-        timeout-minutes: 10
-        run: |
-          cargo nextest run --retries=3 --all --no-default-features --features="ntex/neon-uring,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+          echo "## Linux Test Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Toolchain | Runtime | Kind | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Run doc tests (neon-uring)
-        timeout-minutes: 10
-        run: |
-          cargo test --doc --all --no-default-features --features="ntex/neon-uring,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+          failures=0
+          base_features="ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
 
-      - name: Run tests (tokio)
-        timeout-minutes: 10
-        run: |
-          cargo nextest run --retries=3 --all --no-default-features --features="ntex/tokio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+          run_suite() {
+            local toolchain="$1"
+            local runtime="$2"
+            local kind="$3"
+            local features="$4"
+            local rc=0
 
-      - name: Run doc tests (tokio)
-        timeout-minutes: 10
-        run: |
-          cargo test --doc --all --no-default-features --features="ntex/tokio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+            echo "::group::Linux | ${toolchain} | ${runtime} | ${kind}"
+            if [ "${kind}" = "tests" ]; then
+              cargo +"${toolchain}" nextest run --retries=3 --all --no-default-features --features="${features}"
+              rc=$?
+            else
+              cargo +"${toolchain}" test --doc --all --no-default-features --features="${features}"
+              rc=$?
+            fi
+            echo "::endgroup::"
 
-      - name: Run tests (compio)
-        timeout-minutes: 10
-        run: |
-          cargo nextest run --retries=3 --all --no-default-features --features="ntex/compio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+            if [ $rc -eq 0 ]; then
+              result="PASS"
+            else
+              result="FAIL (${rc})"
+              failures=$((failures + 1))
+            fi
 
-      - name: Run doc tests (compio)
-        timeout-minutes: 10
-        run: |
-          cargo test --doc --all --no-default-features --features="ntex/compio,ntex/cookie,ntex/url,ntex/compress,ntex/openssl,ntex/rustls,ntex/ws"
+            echo "| ${toolchain} | ${runtime} | ${kind} | ${result} |" >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          for toolchain in 1.88.0 stable nightly; do
+            for runtime in neon-polling neon-uring tokio compio; do
+              features="ntex/${runtime},${base_features}"
+              run_suite "${toolchain}" "${runtime}" "tests" "${features}"
+              run_suite "${toolchain}" "${runtime}" "doc-tests" "${features}"
+            done
+          done
+
+          if [ $failures -gt 0 ]; then
+            echo ""
+            echo "${failures} suite(s) failed."
+            exit 1
+          fi
